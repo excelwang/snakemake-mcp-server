@@ -19,7 +19,7 @@ except ImportError as e:
     logger.error(f"Could not import runner module: {e}")
     sys.exit(1)
 
-def create_app(wrappers_path: str, workflow_base_dir: str) -> FastMCP:
+def create_app(wrappers_path: str, workflows_dir: str) -> FastMCP:
     """Create the FastMCP application."""
     mcp = FastMCP("Snakemake Wrapper Server")
 
@@ -116,7 +116,7 @@ def create_app(wrappers_path: str, workflow_base_dir: str) -> FastMCP:
                     threads=threads,
                     log=log,
                     extra_snakemake_args=extra_snakemake_args,
-                    workflow_base_dir=workflow_base_dir, # Pass workflow_base_dir
+                    workflows_dir=workflows_dir, # Pass workflows_dir
                     container=container,
                     benchmark=benchmark,
                     resources=resources,
@@ -151,16 +151,26 @@ def cli():
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8081, help="Port to bind to")
 @click.option("--log-level", default="INFO", help="Log level")
-@click.option("--wrappers-path", default=".", help="Path to the snakemake-wrappers repository.")
-@click.option("--workflow-base-dir", default=".", help="Base directory for Snakemake workflows.")
-def run(host, port, log_level, wrappers_path, workflow_base_dir):
+@click.option("--snakebase-dir", default=os.environ.get("SNAKEBASE_DIR", "./snakebase"), help="Base directory for snakebase.")
+def run(host, port, log_level, snakebase_dir):
     """Starts the Snakemake Wrapper MCP Server."""
     logger.info(f"Starting Snakemake Wrapper MCP Server...")
     logger.info(f"Server will be available at http://{host}:{port}")
-    logger.info(f"Using snakemake-wrappers from: {os.path.abspath(wrappers_path)}")
-    logger.info(f"Using snakemake workflows from: {os.path.abspath(workflow_base_dir)}")
+    
+    wrappers_path = os.path.abspath(os.path.join(snakebase_dir, "snakemake-wrappers"))
+    workflows_dir = os.path.abspath(os.path.join(snakebase_dir, "snakemake-workflows"))
+    
+    logger.info(f"Using snakebase from: {os.path.abspath(snakebase_dir)}")
+    
+    if not os.path.isdir(wrappers_path):
+        logger.error(f"Wrappers directory not found at: {wrappers_path}")
+        sys.exit(1)
+    
+    if not os.path.isdir(workflows_dir):
+        logger.error(f"Workflows directory not found at: {workflows_dir}")
+        sys.exit(1)
 
-    mcp = create_app(wrappers_path, workflow_base_dir)
+    mcp = create_app(wrappers_path, workflows_dir)
 
     try:
         mcp.run(

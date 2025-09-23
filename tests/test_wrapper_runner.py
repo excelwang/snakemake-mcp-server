@@ -14,16 +14,6 @@ def temp_dir():
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
 
-@pytest.fixture
-def wrappers_path():
-    # This fixture should point to the root of the snakemake-wrappers repository
-    # For testing purposes, we can use the current working directory if it's the repo root
-    # or a specific path if the tests are run from elsewhere.
-    # For now, let's assume the test is run from the snakemake-wrappers root or a subfolder
-    # and we can find the 'bio' directory relative to it.
-    current_dir = Path(__file__).parent.parent.parent # snakemake-mcp-server/tests -> snakemake-mcp-server -> snakemake-wrappers
-    return str(current_dir)
-
 def create_dummy_wrapper(tmpdir: Path, wrapper_name: str, content: str):
     wrapper_path = tmpdir / "bio" / wrapper_name
     wrapper_path.mkdir(parents=True, exist_ok=True)
@@ -87,18 +77,6 @@ def test_arriba_local_data(temp_dir, wrappers_path):
     assert result["status"] == "success"
     assert os.path.exists(output_fusions)
     assert os.path.exists(output_discarded)
-
-
-
-SNAKEMAKE_WRAPPERS_PATH = os.environ.get("SNAKEMAKE_WRAPPERS_PATH")
-
-@pytest.fixture
-def wrappers_path():
-    if not SNAKEMAKE_WRAPPERS_PATH:
-        pytest.skip("SNAKEMAKE_WRAPPERS_PATH environment variable not set.")
-    return SNAKEMAKE_WRAPPERS_PATH
-
-# --- Fixture Definitions ---
 
 @pytest.fixture
 def self_contained_faidx_data():

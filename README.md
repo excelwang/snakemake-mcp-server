@@ -10,6 +10,15 @@ The Snakemake MCP (Micro-service Communication Protocol) Server provides a robus
 *   **Dynamic Config Modification (for Workflows):** The `run_snakemake_workflow` tool can dynamically modify a workflow's `config.yaml` based on parameters provided in the API call, allowing for on-the-fly customization of workflow execution.
 *   **Conda Environment Management:** Seamless integration with Conda environments via the `conda_env` parameter, ensuring reproducible and isolated execution environments.
 
+## Environment Variables
+
+*   **`SNAKEBASE_DIR`**: Sets the base directory for `snakemake-wrappers` and `snakemake-workflows`. If not set, it defaults to `./snakebase`.
+
+    Example:
+    ```bash
+    export SNAKEBASE_DIR=/path/to/your/snakebase
+    ```
+
 ## Installation and Setup
 
 To run the Snakemake MCP Server, you need to have Snakemake and Conda (or Mamba) installed in your environment.
@@ -28,14 +37,12 @@ To run the Snakemake MCP Server, you need to have Snakemake and Conda (or Mamba)
 
     ```bash
     cd snakemake-mcp-server
+    # Set the SNAKEBASE_DIR environment variable if your snakebase is not in the default location
+    # export SNAKEBASE_DIR=/path/to/your/snakebase
     python -m src.snakemake_mcp_server.server run \
         --host 127.0.0.1 \
-        --port 8081 \
-        --wrappers-path /path/to/your/snakemake-wrappers \
-        --workflow-base-dir /path/to/your/snakebase
+        --port 8081
     ```
-    *   Replace `/path/to/your/snakemake-wrappers` with the absolute path to your cloned `snakemake-wrappers` repository.
-    *   Replace `/path/to/your/snakebase` with the absolute path to the base directory containing your Snakemake workflows (e.g., the parent directory of `rna-seq-star-deseq2`).
 
 ## Usage Examples
 

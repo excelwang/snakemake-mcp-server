@@ -33,7 +33,7 @@ def run_workflow(workflow_name: str,
                  shadow: Optional[str] = None,
                  conda_env: Optional[str] = None,
                  target_rule: Optional[str] = None,
-                 workflow_base_dir: str = ".", # Added workflow_base_dir parameter
+                 workflows_dir: str = ".", # Added workflows_dir parameter
                  timeout: int = 600) -> Dict:
     """
     Executes a Snakemake workflow by modifying its config and running it.
@@ -44,7 +44,7 @@ def run_workflow(workflow_name: str,
 
         # Determine workflow base directory
         # Now using the passed parameter instead of environment variable
-        workflow_base_path = Path(workflow_base_dir)
+        workflow_base_path = Path(workflows_dir)
 
         workflow_path = workflow_base_path / workflow_name
         if not workflow_path.exists():

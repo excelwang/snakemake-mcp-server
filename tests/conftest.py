@@ -11,19 +11,21 @@ import pytest_asyncio
 import threading
 from snakemake_mcp_server.server import create_app
 
-SNAKEMAKE_WRAPPERS_PATH = os.environ.get("SNAKEMAKE_WRAPPERS_PATH")
+SNAKEBASE_DIR = os.environ.get("SNAKEBASE_DIR")
 
 @pytest.fixture(scope="session")
-def wrappers_path():
-    if not SNAKEMAKE_WRAPPERS_PATH:
-        pytest.skip("SNAKEMAKE_WRAPPERS_PATH environment variable not set.")
-    return SNAKEMAKE_WRAPPERS_PATH
+def snakebase_dir():
+    if not SNAKEBASE_DIR:
+        pytest.fail("SNAKEBASE_DIR environment variable not set.")
+    return os.path.abspath(SNAKEBASE_DIR)
 
 @pytest.fixture(scope="session")
-def workflow_base_dir():
-    # Assuming snakebase is directly under snakemake-wrappers for testing
-    current_dir = Path(__file__).parent.parent.parent # snakemake-mcp-server/tests -> snakemake-mcp-server -> snakemake-wrappers
-    return str(current_dir / "snakebase")
+def wrappers_path(snakebase_dir):
+    return os.path.join(snakebase_dir, "snakemake-wrappers")
+
+@pytest.fixture(scope="session")
+def workflows_dir(snakebase_dir):
+    return os.path.join(snakebase_dir, "snakemake-workflows")
 
 @pytest.fixture(scope="function")
 def server_port():
@@ -37,8 +39,8 @@ def server_url(server_port):
     return f"http://127.0.0.1:{server_port}/mcp"
 
 @pytest.fixture(scope="function")
-def mcp_server(server_port, wrappers_path, workflow_base_dir):
-    app = create_app(wrappers_path, workflow_base_dir)
+def mcp_server(server_port, wrappers_path, workflows_dir):
+    app = create_app(wrappers_path, workflows_dir)
     
     def run_server():
         app.run(transport="http", host="127.0.0.1", port=server_port, log_level="info")

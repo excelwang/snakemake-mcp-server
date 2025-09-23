@@ -8,11 +8,11 @@ from fastmcp import Client
 import yaml
 
 @pytest.fixture(scope="function")
-def dummy_workflow_setup(workflow_base_dir):
+def dummy_workflow_setup(workflows_dir):
     """Sets up a dummy Snakemake workflow for testing."""
-    # Create a temporary directory for the dummy workflow within workflow_base_dir
+    # Create a temporary directory for the dummy workflow within workflows_dir
     workflow_name = "dummy_test_workflow"
-    dummy_workflow_path = Path(workflow_base_dir) / workflow_name
+    dummy_workflow_path = Path(workflows_dir) / workflow_name
     dummy_workflow_path.mkdir(parents=True, exist_ok=True)
 
     # Create workflow/Snakefile
