@@ -93,7 +93,6 @@ def create_app(wrappers_path: str, workflows_dir: str) -> FastMCP:
         benchmark: Optional[str] = None,
         resources: Optional[Dict] = None,
         shadow: Optional[str] = None,
-        conda_env: Optional[str] = None,
         target_rule: Optional[str] = None,
     ) -> Dict:
         """
@@ -121,7 +120,6 @@ def create_app(wrappers_path: str, workflows_dir: str) -> FastMCP:
                     benchmark=benchmark,
                     resources=resources,
                     shadow=shadow,
-                    conda_env=conda_env,
                     target_rule=target_rule,
                 )
             )

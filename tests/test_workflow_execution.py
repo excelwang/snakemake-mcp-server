@@ -107,3 +107,19 @@ async def test_run_snakemake_workflow_with_params(http_client: Client, dummy_wor
     with open(output_file, 'r') as f:
         content = f.read().strip()
         assert content == new_message
+
+@pytest.mark.asyncio
+async def test_lint_snakemake_workflow_template(http_client: Client):
+    """Tests linting the snakemake-workflow-template workflow."""
+    result = await asyncio.wait_for(
+        http_client.call_tool(
+            "run_snakemake_workflow",
+            {
+                "workflow_name": "snakemake-workflow-template",
+                "extra_snakemake_args": "--lint",
+            }
+        ),
+        timeout=120
+    )
+
+    assert result.data.get('status') == 'success'

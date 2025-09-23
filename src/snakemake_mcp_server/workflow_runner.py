@@ -31,7 +31,6 @@ def run_workflow(workflow_name: str,
                  benchmark: Optional[str] = None,
                  resources: Optional[Dict] = None,
                  shadow: Optional[str] = None,
-                 conda_env: Optional[str] = None,
                  target_rule: Optional[str] = None,
                  workflows_dir: str = ".", # Added workflows_dir parameter
                  timeout: int = 600) -> Dict:
@@ -107,8 +106,6 @@ def run_workflow(workflow_name: str,
                 command.extend(["--resources", f"{key}={value}"])
         if shadow:
             command.extend(["--shadow-prefix", shadow]) # Snakemake uses --shadow-prefix for shadow modes
-        if conda_env:
-            command.extend(["--conda-frontend", "mamba", "--conda-env", conda_env]) # Assuming mamba for speed
 
         logger.info(f"Executing command: {' '.join(command)}")
         

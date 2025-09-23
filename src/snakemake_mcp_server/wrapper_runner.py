@@ -12,8 +12,7 @@ def _validate_inputs(wrapper_name: str,
                     inputs: Optional[Union[Dict, List]] = None, 
                     outputs: Optional[Union[Dict, List]] = None, 
                     params: Optional[Dict] = None, threads: int = 1, 
-                    log: Optional[Union[Dict, List]] = None, 
-                    conda_env: Optional[str] = None) -> None:
+                    log: Optional[Union[Dict, List]] = None) -> None:
     """Validate input parameters."""
     if not wrapper_name or not isinstance(wrapper_name, str):
         raise ValueError("wrapper_name must be a non-empty string")
@@ -33,13 +32,6 @@ def _validate_inputs(wrapper_name: str,
                     raise ValueError(f"Invalid input format: {type(item)}")
         else:
             raise ValueError("inputs must be a dict or list or None")
-
-    if conda_env:
-        conda_env_path = Path(conda_env)
-        if not conda_env_path.is_absolute():
-            raise ValueError(f"conda_env path must be absolute: {conda_env}")
-        if not conda_env_path.exists():
-            raise FileNotFoundError(f"Conda environment file not found: {conda_env}")
 
 def _format_rule_section(data, directive: str = ""):
     """Helper function to format a dictionary or list into a Snakemake rule string."""
@@ -82,10 +74,10 @@ def run_wrapper(wrapper_name: str,
         timeout (int): Timeout in seconds for the subprocess execution.
     """
     snakefile_path = None
-    
+    temp_conda_env_file = None
     try:
         # 验证输入
-        _validate_inputs(wrapper_name, inputs, outputs, params, threads, log, conda_env)
+        _validate_inputs(wrapper_name, inputs, outputs, params, threads, log)
         
         # 确定wrapper路径
         wrapper_path = Path(wrappers_path) / "bio" / wrapper_name
@@ -103,7 +95,13 @@ def run_wrapper(wrapper_name: str,
         container_str = f'container: "{container}"' if container else ""
         resources_str = _format_rule_section(resources, "resources") if resources else ""
         shadow_str = f'shadow: "{shadow}"' if shadow else ""
-        conda_str = f'conda: "{conda_env}"' if conda_env else ""
+        
+        conda_str = ""
+        if conda_env:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp:
+                tmp.write(conda_env)
+                temp_conda_env_file = tmp.name
+            conda_str = f'conda: "{temp_conda_env_file}"'
 
         # 组装Snakefile内容
         snakefile_content = f"""
@@ -222,3 +220,9 @@ rule run_single_wrapper:
                 logger.debug(f"Removed temporary Snakefile: {snakefile_path}")
             except Exception as e:
                 logger.warning(f"Failed to remove temporary Snakefile {snakefile_path}: {e}")
+        if temp_conda_env_file and os.path.exists(temp_conda_env_file):
+            try:
+                os.remove(temp_conda_env_file)
+                logger.debug(f"Removed temporary conda env file: {temp_conda_env_file}")
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary conda env file {temp_conda_env_file}: {e}")
