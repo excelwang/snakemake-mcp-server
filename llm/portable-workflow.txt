@@ -6,20 +6,37 @@
 遵循以下原则和最佳实践，确保工作流零修改即可通过profile切换模式（本地 vs. 远程）。优先使用Snakemake >=8.0和snakemake-storage-plugin-s3插件。测试时总是先用`snakemake --profile <profile> -n`干跑，清理缓存`rm -rf .snakemake`。
 
 ## 核心原则
-1. **路径解耦**：所有输入/输出使用相对路径（无`s3://`或绝对本地路径）。让默认存储提供者（profile中设置）自动处理远程路径。本地模式下路径为本地文件，远程模式下自动转换为S3 URI。
-2. **存储插件兼容**：避免`directory()`输出（S3不支持目录对象），使用`expand()`明确列出文件。使用`temp(expand(...))`确保flags在外层。
-3. **配置分离**：通过profile文件分离本地和远程设置，避免修改Snakefile。远程profile注入环境变量（如AWS凭证）。
-4. **源管理**：确保Git跟踪的文件实际存在，避免上传源档案失败。移除不必要目录（如空`profiles/default`）。
-5. **规则优化**：标记`localrules`避免不必要远程执行。注解输入访问模式优化I/O（e.g., sequential for 流式）。
-6. **错误避免**：
-   - 路径重复：profile的`default-storage-prefix`以`/`结尾。
-   - MissingInput：确认S3布局匹配（用`mc ls`检查）。
-   - Flags错误：temp()等flags包裹expand()外部。
-   - 上传失败：Git rm缺失文件。
+1. **显式存储声明与路径策略**：这是确保可移植性的最关键原则。
+   - **使用 `storage()` 函数**：在 `Snakefile` 中，所有指向远程对象存储（如S3）的输入/输出路径，都**必须**用内置的 `storage()` 函数包裹。这会显式告知 Snakemake 调用存储插件来处理文件，从而避免 `MissingInputException`。Snakemake **不会** 自动处理未标记的 S3 路径字符串。
+   - **路径策略**：`config.yaml` 中路径的定义可以灵活选择：
+       - **策略A（相对路径）**：`fasta: inputs/small.fasta`。这需要你在远程 profile 中定义 `default-storage-prefix` (如 `s3://my-bucket/`)，Snakemake 会将两者拼接。
+       - **策略B（完整URI）**：`fasta: s3://my-bucket/inputs/small.fasta`。这种方式更明确，不强制要求 `default-storage-prefix`。
+   无论哪种策略，`Snakefile` 中的 `storage()` 包裹都是必需的。
+
+2. **审慎使用 `localrules`**
+    `localrules` 用于强制规则在主控节点（而非集群）上执行。错误的使用会导致性能问题或执行失败。
+    *   **必须设为 `local` 的规则**：聚合规则（如 `all`, `make_figures`），它们只用于定义目标，不执行实际计算。将它们设为 `local` 可以避免向集群提交无意义的空作业。
+    *   **可以设为 `local` 的规则**：在客户端性能**良好**且并发**不高**的情况下，可以将执行极快（如毫秒级）的超轻量级规则设为 `local`，以避免集群的调度开销。
+    *   **需要特别注意的场景（如您当前的环境）**：如果客户端（主控节点）性能**较差**且需要处理**高并发**的工作流，那么应该将**稳定性置于性能之上**。在这种情况下，建议只将纯聚合规则声明为 `local`，而将所有（即使是超轻量级的）计算或I/O操作规则都交由集群执行，以最大程度为客户端减负。
+    *   **绝对不能设为 `local` 的规则**：所有需要消耗显著计算资源（CPU、内存）或时间的规则（如比对、排序、绘图等），以及需要特定 `conda` 环境的规则（除非你确保主控节点已配置好完全一致的环境）。
+
+3. **存储插件兼容**：避免`directory()`输出（S3不支持目录对象），使用`expand()`明确列出文件。使用`temp(expand(...))`确保flags在外层。
+
+4. **配置分离**：通过profile文件分离本地和远程设置，避免修改Snakefile。远程profile注入环境变量（如AWS凭证）。
+
+5. **源管理**：确保Git跟踪的文件实际存在，避免上传源档案失败。移除不必要目录（如空`profiles/default`）。
+
+6. **规则优化**：注解输入访问模式优化I/O（e.g., sequential for 流式）。
+
+7. **错误避免**：
+    *   路径重复：profile的`default-storage-prefix`以`/`结尾。
+    *   MissingInput：确认S3布局匹配（用`mc ls`检查），并确保在Snakefile中使用了`storage()`。
+    *   Flags错误：temp()等flags包裹expand()外部。
+    *   上传失败：Git rm缺失文件。
 
 ## Snakefile编写指南
 - **头部**：导入必要模块，确保最小版本。
-  ```
+  ```python
   import math
   import os
   import sys
@@ -27,13 +44,24 @@
   from snakemake.utils import min_version
 
   min_version("8.0")
+  # 'storage' 是内置函数，无需导入
   ```
-- **配置加载**：加载config.yaml，使用相对路径定义变量（如`REMOTE_FASTA = config["fasta"]`）。
+- **统一存储接口 (Unified Storage Interface)**: 这是实现 `Snakefile` 可移植性的关键。为了让同一个 `Snakefile` 既能处理本地路径，又能处理远程S3路径，我们要求 `Snakefile` 中的路径都通过 `storage()` 函数进行包装。
+    *   **问题**: 在本地运行时，如果 `storage()` 函数找不到对应的存储插件，就会报错。
+    *   **解决方案**: 在 `local` profile 中，明确指定使用 `fs` (filesystem) 存储插件。这样，`storage()` 函数在本地运行时会由 `fs` 插件处理（效果等同于直接操作本地文件），在远程运行时会由 `s3` 插件处理。这使得 `Snakefile` 本身无需任何条件判断，保持了最大的通用性和简洁性。
+  ```python
+  # Snakefile 中保持通用、无条件的写法
+  REMOTE_FASTA = storage(config["fasta"])
+  REMOTE_FAI = storage(f"{config['fasta']}.fai")
+  ```
+    与之对应的，`local` profile 中需要增加一行 `default-storage-provider: fs`。
+    *   **依赖**: 此方案要求 Snakemake 环境中安装 `snakemake-storage-plugin-fs` 插件。
 - **全局变量**：从config pop参数，确保默认值。
 - **规则定义**：
-  - 输入/输出：相对路径。远程时插件处理。
+  - `localrules`：根据“核心原则”中的指导，审慎声明。对于一个需要将负载完全卸载到弱客户端的工作流，一个推荐的最小集合是 `localrules: all, make_figures`。
+  - 输入/输出：对于远程文件，确保其变量已被 `storage()` 包裹。Snakemake 会在运行时自动处理本地缓存和远程上传/下载。
   - 避免directory()：例如split_windows规则：
-    ```
+    ```python
     rule split_windows:
         input:
             bed="temp/{SM}.{W}.bed",
@@ -44,34 +72,29 @@
         shell:
             "python {params.script} {input.bed} --outputs {output}"
     ```
-  - 混合本地/远程：使用`local("file.txt")`强制本地。
+  - 混合本地/远程：未被`storage()`包裹的文件将被视为本地文件（相对于执行环境）。使用`local()`标记可以阻止文件被传输到远程执行节点。
   - 访问模式：注解输入如`input: access.sequential("file.txt")`优化远程I/O。
-  - localrules：`localrules: all, merge_list`。
   - 脚本引用：`workflow.source_path("scripts/xxx.py")`。
 - **示例规则**：参考StainedGlass工作流，处理FASTA文件、窗口拆分、对齐等，确保shell命令兼容远程（无本地FS依赖）。
 
 ## config.yaml编写指南（工作流配置）
-- 使用相对路径和参数。
-- 示例：
-  ```
-  sample: small
-  fasta: inputs/small.fasta  # 相对，远程时插件添加prefix
-  window: 2000
-  nbatch: 4
-  alnthreads: 4
-  mm_f: 10000
-  tempdir: temp
-  ```
-- 避免绝对路径或`s3://`前缀，确保可移植。
+- **灵活定义路径**：为确保可移植性，路径定义应与 `Snakefile` 和 profile 协同工作。
+- **示例**：
+    ```yaml
+    # fasta: inputs/small.fasta
+    ```
 
 ## Profile配置指南（模式切换）
 - **本地profile**（workflow/profiles/local/config.yaml）：
-  ```
+  ```yaml
+  default-storage-provider: fs
   executor: local
   jobs: 10
+  config:
+    - fasta=.test/small.fasta
   ```
 - **远程profile**（workflow/profiles/k3s-s3/config.yaml）：
-  ```
+  ```yaml
   executor: kubernetes
   default-storage-provider: s3
   default-storage-prefix: s3://snakemake-data/  # 尾部斜杠
@@ -85,13 +108,14 @@
 - 运行：本地`snakemake --profile local`，远程`snakemake --profile k3s-s3`。
 
 ## 安装和依赖
-- 安装`snakemake-storage-plugin-s3`。
+- 安装 `snakemake-storage-plugin-s3` 用于S3支持。
+- 安装 `snakemake-storage-plugin-fs` 用于本地 `fs` 存储支持。
 - 规则中用`conda: "envs/env.yaml"`指定环境，确保Pod镜像包含工具。
 
 ## 调试和测试
 - 干跑：`snakemake --profile <profile> -n`检查DAG和路径。
 - Kubernetes：`kubectl describe job <job>`调试Pods，`kubectl logs <pod>`查看日志。
-- 存储：`mc ls myminio/snakemake-data/`验证上传。
+- 存储：`s3cmd ls `验证数据。
 - 凭证：通过envvars注入，避免硬编码。
 
 使用此提示生成工作流时，确保兼容性测试：从小数据集开始，本地验证后切换远程。如果用户提供具体工作流，逐步应用这些规则改造。
