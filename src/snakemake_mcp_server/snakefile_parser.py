@@ -52,23 +52,58 @@ def parse_snakefile_content(snakefile_content: str) -> List[Dict[str, Any]]:
         if not current_rule:
             continue
         
-        # Match section start (input:, output:, params:, log:, wrapper:, threads:)
-        section_match = re.match(r'^\s+(\w+):', line)
+        # Match section start - process all valid Snakemake sections, not just API-supported ones
+        section_match = re.match(r'^\s+(input|output|params|log|wrapper|threads|conda|singularity|benchmark|shadow|resources|version|localrules|message|priority|wildcard_constraints|group|benchmark_repeats|cgroup|default_target|localrule|restart_times|ruleorder):\s*(.*)$', line)
         if section_match:
             section_name = section_match.group(1)
             current_section = section_name
-            # Handle values on the same line as section header
-            value_part = line[section_match.end(1):].strip()
-            if value_part and value_part.startswith(' '):
-                value_part = value_part[1:].strip()
-                if value_part and not value_part.startswith('#'):  # Skip comments
-                    # Remove trailing comma and quotes
-                    value_part = _clean_value(value_part)
-                    if value_part:
-                        _add_value_to_section(current_rule, current_section, value_part)
+            # Handle values on the same line as section header (like "threads: 4,")
+            value_part = section_match.group(2).strip()
+            if value_part and not value_part.startswith('#'):  # Skip comments
+                # Remove trailing comma and quotes
+                value_part = _clean_value(value_part)
+                if value_part:
+                    # Special handling for threads value
+                    if section_name == 'threads':
+                        try:
+                            current_rule['threads'] = int(value_part)
+                        except ValueError:
+                            # Try to evaluate if it's a simple expression
+                            try:
+                                current_rule['threads'] = int(eval(value_part))
+                            except:
+                                current_rule['threads'] = 1  # Default value
+                    elif section_name == 'wrapper':
+                        # Extract wrapper path (remove quotes and "master/" prefix)
+                        wrapper_match = re.search(r'["\'](.+?)["\']', value_part)
+                        if wrapper_match:
+                            wrapper_path = wrapper_match.group(1)
+                            # Remove "master/" prefix to get the actual wrapper name
+                            if wrapper_path.startswith('master/'):
+                                wrapper_path = wrapper_path[7:]  # Remove 'master/'
+                            current_rule['wrapper'] = wrapper_path
+                    elif section_name == 'conda':
+                        conda_match = re.search(r'["\'](.+?)["\']', value_part)
+                        if conda_match:
+                            current_rule['conda'] = conda_match.group(1)
+                    elif section_name == 'singularity':
+                        singularity_match = re.search(r'["\'](.+?)["\']', value_part)
+                        if singularity_match:
+                            current_rule['singularity'] = singularity_match.group(1)
+                    elif section_name == 'benchmark':
+                        benchmark_match = re.search(r'["\'](.+?)["\']', value_part)
+                        if benchmark_match:
+                            current_rule['benchmark'] = benchmark_match.group(1)
+                    elif section_name == 'shadow':
+                        shadow_match = re.search(r'["\'](.+?)["\']', value_part)
+                        if shadow_match:
+                            current_rule['shadow'] = shadow_match.group(1)
+                    else:
+                        # For input, output, log, add to the appropriate section
+                        _add_value_to_section(current_rule, section_name, value_part)
             continue
         
-        # Match indented content within a section
+        # Process indented content within sections - handle all sections that were matched above
         if line.strip() and current_section and current_rule:
             # Check if it's an indented line (part of current section)
             if line.startswith(' ') or line.startswith('\t'):
@@ -79,7 +114,7 @@ def parse_snakefile_content(snakefile_content: str) -> List[Dict[str, Any]]:
                 if not content or content.startswith('#'):
                     continue
                 
-                # Handle different section types
+                # Handle different section types - extended to handle more Snakemake directives
                 if current_section == 'wrapper':
                     # Extract wrapper path (remove quotes and "master/" prefix)
                     wrapper_match = re.search(r'["\'](.+?)["\']', content)
@@ -141,12 +176,64 @@ def parse_snakefile_content(snakefile_content: str) -> List[Dict[str, Any]]:
                         value = _clean_value(value)
                         _add_value_to_section(current_rule, current_section, value)
                 elif current_section == 'threads':
-                    # Parse thread count
+                    # Parse thread count - handle both standalone values and key=value format
                     content = content.strip().rstrip(',')
+                    # Handle key=value format like "threads: 4" where it might appear as key=value inside the section
+                    if '=' in content:
+                        parts = content.split('=', 1)
+                        if len(parts) == 2:
+                            value = parts[1].strip()
+                            value = _clean_value(value)
+                        else:
+                            value = content
+                    else:
+                        value = content
                     try:
-                        current_rule['threads'] = int(content)
+                        current_rule['threads'] = int(value)
                     except ValueError:
-                        pass  # Keep as None if parsing fails
+                        # Try to evaluate if it's a simple expression
+                        try:
+                            current_rule['threads'] = int(eval(value))
+                        except:
+                            pass  # Keep as None if parsing fails
+                elif current_section == 'conda':
+                    # Parse conda environment
+                    conda_match = re.search(r'["\'](.+?)["\']', content)
+                    if conda_match:
+                        current_rule['conda'] = conda_match.group(1)
+                elif current_section == 'singularity':
+                    # Parse singularity image
+                    singularity_match = re.search(r'["\'](.+?)["\']', content)
+                    if singularity_match:
+                        current_rule['singularity'] = singularity_match.group(1)
+                elif current_section == 'benchmark':
+                    # Parse benchmark file
+                    benchmark_match = re.search(r'["\'](.+?)["\']', content)
+                    if benchmark_match:
+                        current_rule['benchmark'] = benchmark_match.group(1)
+                elif current_section == 'shadow':
+                    # Parse shadow mode
+                    shadow_match = re.search(r'["\'](.+?)["\']', content)
+                    if shadow_match:
+                        current_rule['shadow'] = shadow_match.group(1)
+                elif current_section == 'resources':
+                    # Parse key=value format in resources
+                    if '=' in content:
+                        parts = content.split('=', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip().strip('\'"')
+                            value = parts[1].strip()
+                            # Clean the value (remove trailing comma, quotes)
+                            value = _clean_value(value)
+                            # Try to convert value to appropriate type
+                            try:
+                                parsed_value = yaml.safe_load(value)
+                                value = parsed_value
+                            except:
+                                pass  # Keep as string if parsing fails
+                            if 'resources' not in current_rule:
+                                current_rule['resources'] = {}
+                            current_rule['resources'][key] = value
     
     # Don't forget to add the last rule
     if current_rule:
@@ -185,6 +272,7 @@ def _add_value_to_section(rule: Dict, section: str, value: str):
 def convert_rule_to_tool_process_call(rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Convert a parsed rule to a tool/process API call format.
+    Only include fields that are supported by the API model.
     
     Args:
         rule: Dictionary representing a parsed rule with input, output, etc.
@@ -195,14 +283,15 @@ def convert_rule_to_tool_process_call(rule: Dict[str, Any]) -> Optional[Dict[str
     if not rule.get('wrapper'):
         return None  # Need wrapper path
     
-    # Convert to tool/process format
+    # Convert to tool/process format with only supported API fields
+    # These are the exact fields accepted by SnakemakeWrapperRequest
     tool_call = {
         "wrapper_name": rule['wrapper'],
-        "inputs": rule['input'] if rule['input'] else [],
-        "outputs": rule['output'] if rule['output'] else [],
-        "params": rule['params'] if rule['params'] else {},
-        "threads": rule.get('threads', 1),
-        "log": rule['log'] if rule['log'] else {},
+        "inputs": rule.get('input', []) or [],
+        "outputs": rule.get('output', []) or [],
+        "params": rule.get('params', {}) or {},
+        "threads": rule.get('threads', 1) or 1,
+        "log": rule.get('log', []) or [],
         "extra_snakemake_args": "",
         "container": None,
         "benchmark": None,
