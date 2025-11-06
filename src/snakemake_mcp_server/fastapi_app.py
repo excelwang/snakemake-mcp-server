@@ -65,6 +65,7 @@ class WrapperMetadata(BaseModel):
     params: Optional[Any] = None
     notes: Optional[str] = None
     path: str  # Relative path of the wrapper
+    demos: Optional[List[Dict[str, Any]]] = None  # Include demo calls in the metadata
 
 
 class ListWrappersResponse(BaseModel):
@@ -137,7 +138,7 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
     app.state.wrappers_path = wrappers_path
     app.state.workflows_dir = workflows_dir
     
-    @app.post("/tools/process", response_model=SnakemakeResponse, operation_id="tool_process")
+    @app.post("/tool-processes", response_model=SnakemakeResponse, operation_id="tool_process")
     async def tool_process_endpoint(request: SnakemakeWrapperRequest):
         """
         Process a Snakemake tool by name and returns the result.
@@ -178,7 +179,7 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
             logger.error(f"Error executing tool '{request.wrapper_name}': {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/workflows/process", response_model=SnakemakeResponse, operation_id="workflow_process")
+    @app.post("/workflow-processes", response_model=SnakemakeResponse, operation_id="workflow_process")
     async def workflow_process_endpoint(request: SnakemakeWorkflowRequest):
         """
         Process a Snakemake workflow by name and returns the result.
@@ -246,7 +247,10 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
             logger.error(f"Error getting tools: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error getting tools: {str(e)}")
 
-    @app.get("/get-tool-meta/{tool_path:path}", response_model=WrapperMetadata, operation_id="get_tool_meta")
+    # Import the snakefile parser utility for demo generation
+    from .snakefile_parser import generate_demo_calls_for_wrapper
+    
+    @app.get("/tools/{tool_path:path}", response_model=WrapperMetadata, operation_id="get_tool_meta")
     async def get_tool_meta(tool_path: str):
         """
         Get metadata for a specific tool by its path.
@@ -277,6 +281,9 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
             with open(meta_file_path, 'r', encoding='utf-8') as f:
                 meta_data = yaml.safe_load(f)
             
+            # Generate demo calls from the test Snakefile
+            demo_calls = generate_demo_calls_for_wrapper(full_path)
+            
             # Create and return the WrapperMetadata object
             wrapper_meta = WrapperMetadata(
                 name=meta_data.get('name', os.path.basename(full_path)),
@@ -287,10 +294,11 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
                 output=meta_data.get('output'),
                 params=meta_data.get('params'),
                 notes=meta_data.get('notes'),
-                path=tool_path
+                path=tool_path,
+                demos=demo_calls
             )
             
-            logger.info(f"Successfully retrieved metadata for tool: {tool_path}")
+            logger.info(f"Successfully retrieved metadata for tool: {tool_path} with {len(demo_calls)} demo calls")
             return wrapper_meta
             
         except HTTPException:
@@ -299,51 +307,7 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
             logger.error(f"Error getting tool metadata for {tool_path}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error getting tool metadata: {str(e)}")
 
-    # Import the snakefile parser utility for demo generation
-    from .snakefile_parser import generate_demo_calls_for_wrapper
-    
-    class ToolDemoResponse(BaseModel):
-        tool_path: str
-        demos: List[Dict[str, Any]]
-        total_count: int
-    
-    @app.get("/get-tool-demo/{tool_path:path}", response_model=ToolDemoResponse, operation_id="get_tool_demo")
-    async def get_tool_demo(tool_path: str):
-        """
-        Get demo tool/process calls for a specific tool by parsing its test Snakefile.
-        
-        Args:
-            tool_path: The relative path of the tool (e.g., "bio/samtools/faidx")
-        """
-        logger.info(f"Received request to get demo calls for tool: {tool_path}")
-        
-        try:
-            # Sanitize the path to prevent directory traversal
-            if tool_path.startswith('/') or tool_path.startswith('..'):
-                raise HTTPException(status_code=400, detail="Invalid tool path")
-            
-            # Build the full path by joining with the wrappers_path
-            full_path = os.path.join(wrappers_path, tool_path)
-            
-            # Check if the directory exists
-            if not os.path.exists(full_path) or not os.path.isdir(full_path):
-                raise HTTPException(status_code=404, detail=f"Tool not found: {tool_path}")
-            
-            # Generate demo calls from the test Snakefile
-            demos = generate_demo_calls_for_wrapper(full_path)
-            
-            logger.info(f"Successfully generated {len(demos)} demo calls for tool: {tool_path}")
-            return ToolDemoResponse(
-                tool_path=tool_path,
-                demos=demos,
-                total_count=len(demos)
-            )
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error getting tool demos for {tool_path}: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error getting tool demos: {str(e)}")
+
 
     return app
 
