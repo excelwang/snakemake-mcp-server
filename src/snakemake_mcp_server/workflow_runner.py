@@ -49,6 +49,9 @@ def run_workflow(workflow_name: str,
         if not workflow_path.exists():
             raise FileNotFoundError(f"Workflow not found at: {workflow_path}")
         
+        # Convert to absolute path to avoid resolution issues
+        workflow_path = workflow_path.resolve()
+        
         main_snakefile = workflow_path / "workflow" / "Snakefile"
         if not main_snakefile.exists():
             raise FileNotFoundError(f"Main Snakefile not found for workflow at: {main_snakefile}")
@@ -109,14 +112,14 @@ def run_workflow(workflow_name: str,
 
         logger.info(f"Executing command: {' '.join(command)}")
         
-        # Execute command
+        # Execute command - use absolute path for working directory
         result = subprocess.run(
             command, 
             check=True, 
             capture_output=True, 
             text=True,
             timeout=timeout,
-            cwd=workflow_path # Run Snakemake from the workflow's base directory
+            cwd=workflow_path # This is now an absolute path
         )
         
         return {

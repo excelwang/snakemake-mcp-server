@@ -84,6 +84,8 @@ def run_wrapper(wrapper_name: str,
         if not wrapper_path.exists():
             raise FileNotFoundError(f"Wrapper not found at: {wrapper_path}")
         
+        # Convert to absolute path to avoid resolution issues
+        wrapper_path = wrapper_path.resolve()
         wrapper_url = f"file://{wrapper_path}"
         
         # 格式化规则部分
@@ -160,14 +162,14 @@ rule run_single_wrapper:
         
         logger.info(f"Executing command: {' '.join(command)}")
         
-        # 执行命令
+        # 执行命令 - 使用绝对路径作为工作目录
         result = subprocess.run(
             command, 
             check=True, 
             capture_output=True, 
             text=True,
             timeout=timeout,
-            cwd=wrappers_path
+            cwd=Path(wrappers_path).resolve()
         )
         
         return {

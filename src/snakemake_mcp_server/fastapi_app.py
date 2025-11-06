@@ -134,8 +134,8 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
         return wrappers
     
     # Store workflows_dir and wrappers_path in app.state to make them accessible to the endpoints
-    app.state.wrappers_path = os.path.abspath(wrappers_path)
-    app.state.workflows_dir = os.path.abspath(workflows_dir)
+    app.state.wrappers_path = wrappers_path
+    app.state.workflows_dir = workflows_dir
     
     @app.post("/tools/process", response_model=SnakemakeResponse, operation_id="tool_process")
     async def tool_process_endpoint(request: SnakemakeWrapperRequest):
