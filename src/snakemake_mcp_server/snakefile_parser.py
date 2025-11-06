@@ -1,0 +1,293 @@
+"""
+Utility to convert Snakemake wrapper test Snakefiles to tool/process API calls.
+"""
+import re
+import yaml
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+
+def parse_snakefile_content(snakefile_content: str) -> List[Dict[str, Any]]:
+    """
+    Parse a Snakefile and extract rule information that can be converted to tool/process API calls.
+    
+    Args:
+        snakefile_content: Content of the Snakefile as string
+        
+    Returns:
+        List of rules, each with input, output, params, log, wrapper information
+    """
+    rules = []
+    
+    # Split content into lines
+    lines = snakefile_content.split('\n')
+    
+    current_rule = None
+    current_section = None
+    
+    for line in lines:
+        line = line.rstrip()  # Remove trailing whitespace
+        
+        # Match rule definition
+        rule_match = re.match(r'^rule\s+(\w+):', line)
+        if rule_match:
+            # Save previous rule if exists
+            if current_rule:
+                rules.append(current_rule)
+            
+            # Start new rule
+            current_rule = {
+                'name': rule_match.group(1),
+                'input': [],
+                'output': [],
+                'params': {},
+                'log': [],
+                'wrapper': None,
+                'threads': None
+            }
+            continue
+        
+        # Skip if no current rule
+        if not current_rule:
+            continue
+        
+        # Match section start (input:, output:, params:, log:, wrapper:, threads:)
+        section_match = re.match(r'^\s+(\w+):', line)
+        if section_match:
+            section_name = section_match.group(1)
+            current_section = section_name
+            # Handle values on the same line as section header
+            value_part = line[section_match.end(1):].strip()
+            if value_part and value_part.startswith(' '):
+                value_part = value_part[1:].strip()
+                if value_part and not value_part.startswith('#'):  # Skip comments
+                    # Remove trailing comma and quotes
+                    value_part = _clean_value(value_part)
+                    if value_part:
+                        _add_value_to_section(current_rule, current_section, value_part)
+            continue
+        
+        # Match indented content within a section
+        if line.strip() and current_section and current_rule:
+            # Check if it's an indented line (part of current section)
+            if line.startswith(' ') or line.startswith('\t'):
+                # Remove leading whitespace
+                content = line.strip()
+                
+                # Skip empty lines and comments
+                if not content or content.startswith('#'):
+                    continue
+                
+                # Handle different section types
+                if current_section == 'wrapper':
+                    # Extract wrapper path (remove quotes and "master/" prefix)
+                    wrapper_match = re.search(r'["\'](.+?)["\']', content)
+                    if wrapper_match:
+                        wrapper_path = wrapper_match.group(1)
+                        # Remove "master/" prefix to get the actual wrapper name
+                        if wrapper_path.startswith('master/'):
+                            wrapper_path = wrapper_path[7:]  # Remove 'master/'
+                        current_rule['wrapper'] = wrapper_path
+                elif current_section == 'params' and '=' in content:
+                    # Parse key=value format in params
+                    parts = content.split('=', 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip().strip('\'"')
+                        value = parts[1].strip()
+                        # Clean the value (remove trailing comma, quotes)
+                        value = _clean_value(value)
+                        # Try to convert value to appropriate type
+                        try:
+                            # Try to parse as YAML/JSON to get proper types
+                            parsed_value = yaml.safe_load(value)
+                            # Special handling for strings that look like lists in Snakefile format
+                            if isinstance(parsed_value, str) and (parsed_value.startswith('[') and parsed_value.endswith(']')):
+                                # Try to parse as list in Python format
+                                try:
+                                    parsed_value = eval(parsed_value)  # Safe for known values
+                                except:
+                                    pass  # Keep as string
+                            value = parsed_value
+                        except:
+                            pass  # Keep as string if parsing fails
+                        current_rule['params'][key] = value
+                elif current_section in ['input', 'output', 'log']:
+                    # Handle key=value format (like "bam="mapped/{sample}.bam"")
+                    if '=' in content:
+                        parts = content.split('=', 1)
+                        if len(parts) == 2:
+                            key = parts[0].strip().strip('\'"')
+                            value = parts[1].strip()
+                            # Clean the value (remove trailing comma, quotes)
+                            value = _clean_value(value)
+                            # Add as dict entry
+                            if current_section == 'input':
+                                if not isinstance(current_rule['input'], dict):
+                                    current_rule['input'] = {}
+                                current_rule['input'][key] = value
+                            elif current_section == 'output':
+                                if not isinstance(current_rule['output'], dict):
+                                    current_rule['output'] = {}
+                                current_rule['output'][key] = value
+                            elif current_section == 'log':
+                                if not isinstance(current_rule['log'], dict):
+                                    current_rule['log'] = {}
+                                current_rule['log'][key] = value
+                    else:
+                        # Simple value
+                        value = content.strip()
+                        # Clean the value (remove trailing comma, quotes)
+                        value = _clean_value(value)
+                        _add_value_to_section(current_rule, current_section, value)
+                elif current_section == 'threads':
+                    # Parse thread count
+                    content = content.strip().rstrip(',')
+                    try:
+                        current_rule['threads'] = int(content)
+                    except ValueError:
+                        pass  # Keep as None if parsing fails
+    
+    # Don't forget to add the last rule
+    if current_rule:
+        rules.append(current_rule)
+    
+    return rules
+
+
+def _clean_value(value: str) -> str:
+    """Clean a value by removing trailing commas and extra quotes."""
+    # Remove trailing comma and whitespace
+    value = value.rstrip(',').strip()
+    # Remove surrounding quotes (single or double)
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        value = value[1:-1]
+    # Remove any remaining quotes
+    value = value.strip('"').strip("'")
+    return value
+
+
+def _add_value_to_section(rule: Dict, section: str, value: str):
+    """Helper to add a value to the appropriate section of a rule."""
+    if section in ['input', 'output', 'log']:
+        if isinstance(rule[section], list):
+            rule[section].append(value)
+        else:
+            # If it's not a list but we want to add more values, convert to list
+            if rule[section] is None:
+                rule[section] = [value] if value else []
+            elif isinstance(rule[section], str):
+                rule[section] = [rule[section], value]
+            elif isinstance(rule[section], list):
+                rule[section].append(value)
+
+
+def convert_rule_to_tool_process_call(rule: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Convert a parsed rule to a tool/process API call format.
+    
+    Args:
+        rule: Dictionary representing a parsed rule with input, output, etc.
+        
+    Returns:
+        Dictionary containing the tool/process call parameters, or None if invalid
+    """
+    if not rule.get('wrapper'):
+        return None  # Need wrapper path
+    
+    # Convert to tool/process format
+    tool_call = {
+        "wrapper_name": rule['wrapper'],
+        "inputs": rule['input'] if rule['input'] else [],
+        "outputs": rule['output'] if rule['output'] else [],
+        "params": rule['params'] if rule['params'] else {},
+        "threads": rule.get('threads', 1),
+        "log": rule['log'] if rule['log'] else {},
+        "extra_snakemake_args": "",
+        "container": None,
+        "benchmark": None,
+        "resources": {},
+        "shadow": None,
+        "conda_env": None
+    }
+    
+    return tool_call
+
+
+def analyze_wrapper_test_directory(wrapper_path: str, snakefile_path: str) -> List[Dict[str, Any]]:
+    """
+    Analyze a wrapper test directory and convert all test rules to tool/process calls.
+    
+    Args:
+        wrapper_path: Path to the wrapper directory
+        snakefile_path: Path to the test Snakefile
+        
+    Returns:
+        List of tool/process API calls that can be made based on the test Snakefile
+    """
+    # Read the Snakefile
+    with open(snakefile_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Parse the rules
+    rules = parse_snakefile_content(content)
+    
+    # Convert each rule to a tool/process call
+    tool_calls = []
+    for rule in rules:
+        tool_call = convert_rule_to_tool_process_call(rule)
+        if tool_call:
+            tool_calls.append(tool_call)
+    
+    return tool_calls
+
+
+# Example usage:
+if __name__ == "__main__":
+    # Example: Analyze a specific test Snakefile
+    test_snakefile = """
+rule samtools_faidx:
+    input:
+        "{sample}.fa",
+    output:
+        "out/{sample}.fa.fai",
+    log:
+        "{sample}.log",
+    params:
+        extra="",
+    wrapper:
+        "master/bio/samtools/faidx"
+
+
+rule samtools_faidx_bgzip:
+    input:
+        "{sample}.fa.bgz",
+    output:
+        fai="out/{sample}.fas.bgz.fai",
+        gzi="out/{sample}.fas.bgz.gzi",
+    log:
+        "{sample}.bzgip.log",
+    params:
+        extra="",
+    wrapper:
+        "master/bio/samtools/faidx"
+"""
+    
+    rules = parse_snakefile_content(test_snakefile)
+    print(f"Found {len(rules)} rules:")
+    
+    for rule in rules:
+        print(f"\nRule: {rule['name']}")
+        print(f"  Wrapper: {rule['wrapper']}")
+        print(f"  Input: {rule['input']}")
+        print(f"  Output: {rule['output']}")
+        print(f"  Params: {rule['params']}")
+        print(f"  Log: {rule['log']}")
+        print(f"  Threads: {rule['threads']}")
+        
+        # Convert to tool/process call
+        tool_call = convert_rule_to_tool_process_call(rule)
+        if tool_call:
+            print(f"  Tool/Process Call: {tool_call['wrapper_name']}")
+            print(f"  Inputs: {tool_call['inputs']}")
+            print(f"  Outputs: {tool_call['outputs']}")
+            print(f"  Params: {tool_call['params']}")
