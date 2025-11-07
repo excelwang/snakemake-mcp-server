@@ -38,8 +38,13 @@ def parse_snakefile_with_api(snakefile_path: str) -> List[Dict[str, Any]]:
     if not os.path.exists(snakefile_path):
         return []
 
-    # Snakemake API imports (moved inside function to avoid circular imports)
+    # Store original sys.path and cwd
+    original_sys_path = sys.path[:]
+    original_cwd = os.getcwd()
+    workflow = None # Initialize workflow to None
+    
     try:
+        # Snakemake API imports (moved inside try block to avoid circular imports)
         from snakemake.workflow import Workflow
         from snakemake.settings.types import (
             ConfigSettings,
@@ -57,11 +62,6 @@ def parse_snakefile_with_api(snakefile_path: str) -> List[Dict[str, Any]]:
         print(f"Error: Snakemake is not installed or accessible. Please install Snakemake. {e}", file=sys.stderr)
         return [] # Return empty list if Snakemake imports fail
 
-    # Store original sys.path and cwd
-    original_sys_path = sys.path[:]
-    original_cwd = os.getcwd()
-    workflow = None # Initialize workflow to None
-    
     try:
         # 1. Instantiate Workflow object with default settings
         # We use default settings objects for parsing purposes.

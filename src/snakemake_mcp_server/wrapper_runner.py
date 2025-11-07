@@ -32,17 +32,19 @@ def run_wrapper(
     """
     Executes a single Snakemake wrapper by programmatically building a workflow in memory.
     """
-    # Snakemake API imports (moved inside function to avoid circular imports)
-    from snakemake.workflow import Workflow
-    from snakemake.settings.types import (
-        ConfigSettings, ResourceSettings, WorkflowSettings, StorageSettings,
-        DeploymentSettings, ExecutionSettings, SchedulingSettings, OutputSettings, DAGSettings
-    )
-    from snakemake.executors.local import Executor as LocalExecutor
-    from snakemake.executors import ExecutorSettings as LocalExecutorSettings
-    from snakemake.scheduler import Greeduler as GreedyScheduler
-    from snakemake.exceptions import WorkflowError, print_exception
-    from snakemake.deployment.env_modules import EnvModules
+    # Delayed Snakemake API imports with error handling to avoid circular imports
+    try:
+        from snakemake.workflow import Workflow
+        from snakemake.settings.types import (
+            ConfigSettings, ResourceSettings, WorkflowSettings, StorageSettings,
+            DeploymentSettings, ExecutionSettings, SchedulingSettings, OutputSettings, DAGSettings
+        )
+        from snakemake.executors.local import Executor as LocalExecutor
+        from snakemake.scheduler import Greeduler as GreedyScheduler
+        from snakemake.exceptions import print_exception
+        from snakemake.deployment.env_modules import EnvModules
+    except ImportError as e:
+        return {"status": "failed", "stdout": "", "stderr": f"Failed to import snakemake: {e}", "exit_code": -1, "error_message": f"Import error: {e}"}
 
     stdout_capture = StringIO()
     stderr_capture = StringIO()
