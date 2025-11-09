@@ -31,8 +31,8 @@ def run_wrapper(
     timeout: int = 600,
 ) -> Dict:
     """
-    Executes a single Snakemake wrapper by programmatically building a workflow in memory.
-    Uses the new snakemake.api to avoid circular imports.
+    Executes a single Snakemake wrapper by programmatically building a workflow.
+    Runs in the original workdir with a temporary, uniquely-named Snakefile.
     """
     # Delayed Snakemake API imports with error handling to avoid circular imports
     try:
@@ -46,52 +46,41 @@ def run_wrapper(
     stdout_capture = StringIO()
     stderr_capture = StringIO()
     original_cwd = os.getcwd()
+    snakefile_path = None  # Initialize to ensure it's available in finally block
 
     try:
         # 1. Prepare working directory
-        # Always use a temporary directory for execution to avoid modifying original files
-        import tempfile
-        execution_workdir = Path(tempfile.mkdtemp(prefix="snakemake-wrapper-run-"))
-        
-        # If a specific workdir was provided, copy necessary files to the temp dir
-        if workdir:
-            original_workdir = Path(workdir).resolve()
-            # Copy all files from original workdir to the temporary directory
-            import shutil
-            for item in original_workdir.iterdir():
-                source = original_workdir / item.name
-                destination = execution_workdir / item.name
-                if source.is_dir():
-                    shutil.copytree(source, destination)
-                else:
-                    shutil.copy2(source, destination)
-        else:
-            original_workdir = None
-            
+        # As per request, run in the original workdir if provided
+        if not workdir or not Path(workdir).is_dir():
+            return {"status": "failed", "stdout": "", "stderr": "A valid 'workdir' must be provided for execution.", "exit_code": -1, "error_message": "Missing or invalid workdir."}
+
+        execution_workdir = Path(workdir).resolve()
         os.chdir(execution_workdir)
 
-        # 2. Generate temporary Snakefile with the wrapper
-        snakefile_content = _generate_wrapper_snakefile(
-            wrapper_name=wrapper_name,
-            wrappers_path=wrappers_path,
-            inputs=inputs,
-            outputs=outputs,
-            params=params,
-            log=log,
-            threads=threads,
-            resources=resources,
-            priority=priority,
-            shadow_depth=shadow_depth,
-            benchmark=benchmark,
-            conda_env=conda_env,
-            container_img=container_img,
-            env_modules=env_modules,
-            group=group
-        )
-
-        snakefile_path = Path("Snakefile")
-        with open(snakefile_path, 'w') as f:
-            f.write(snakefile_content)
+        # 2. Generate temporary Snakefile with a unique name in the workdir
+        import tempfile
+        
+        # Using NamedTemporaryFile to guarantee a unique name and handle cleanup
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".smk", dir=execution_workdir, encoding='utf-8') as tmp_snakefile:
+            snakefile_path = Path(tmp_snakefile.name)
+            snakefile_content = _generate_wrapper_snakefile(
+                wrapper_name=wrapper_name,
+                wrappers_path=wrappers_path,
+                inputs=inputs,
+                outputs=outputs,
+                params=params,
+                log=log,
+                threads=threads,
+                resources=resources,
+                priority=priority,
+                shadow_depth=shadow_depth,
+                benchmark=benchmark,
+                conda_env=conda_env,
+                container_img=container_img,
+                env_modules=env_modules,
+                group=group
+            )
+            tmp_snakefile.write(snakefile_content)
 
         # 3. Use SnakemakeApi to execute - must be in a with statement
         config_settings = ConfigSettings()
@@ -156,6 +145,12 @@ def run_wrapper(
         return {"status": "failed", "stdout": stdout_capture.getvalue(), "stderr": stderr_val, "exit_code": -1, "error_message": str(e)}
     finally:
         os.chdir(original_cwd)
+        # Clean up the temporary snakefile
+        if snakefile_path and os.path.exists(snakefile_path):
+            try:
+                os.remove(snakefile_path)
+            except OSError as e:
+                logger.error(f"Error removing temporary snakefile {snakefile_path}: {e}")
 
 
 def _generate_wrapper_snakefile(
