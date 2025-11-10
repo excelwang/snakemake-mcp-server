@@ -150,7 +150,22 @@ async def run_snakemake_job_in_background(job_id: str, request: SnakemakeWrapper
             workdir=request.workdir,
         )
         
-        job_store[job_id].result = result
+        # Prepare output file paths
+        output_file_paths = []
+        if request.outputs and request.workdir:
+            workdir_path = Path(request.workdir)
+            if isinstance(request.outputs, list):
+                for output_name in request.outputs:
+                    output_file_paths.append(str(workdir_path / output_name))
+            elif isinstance(request.outputs, dict):
+                for output_name in request.outputs.values():
+                    output_file_paths.append(str(workdir_path / output_name))
+
+        # Add output_files to the result dictionary
+        final_result = result.copy()
+        final_result["output_files"] = output_file_paths
+        
+        job_store[job_id].result = final_result
         if result.get("status") == "success":
             job_store[job_id].status = JobStatus.COMPLETED
         else:
