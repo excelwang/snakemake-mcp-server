@@ -137,3 +137,23 @@ async def test_direct_fastapi_demo_structure_validation(rest_client):
            f"Wrapper name '{wrapper_name}' should be related to tool path '{test_tool_path}'"
     
     print(f"Direct FastAPI demo structure validated: {wrapper_name}")
+
+
+@pytest.mark.asyncio
+async def test_direct_fastapi_demo_case_endpoint(rest_client):
+    """Test the /demo-case endpoint to ensure it returns the expected structure."""
+    response = rest_client.get("/demo-case")
+    
+    assert response.status_code == 200
+    result = response.json()
+    
+    assert "method" in result
+    assert "endpoint" in result
+    assert "payload" in result
+    assert "curl_example" in result
+    
+    assert result["method"] == "POST"
+    assert result["endpoint"] == "/tool-processes"
+    assert result["payload"]["wrapper_name"] == "bio/samtools/faidx"
+    
+    print("Direct FastAPI /demo-case endpoint validated.")

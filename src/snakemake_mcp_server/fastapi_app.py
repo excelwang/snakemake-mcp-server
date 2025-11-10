@@ -94,10 +94,27 @@ class WrapperMetadata(BaseModel):
     input: Optional[Any] = None
     output: Optional[Any] = None
     params: Optional[Any] = None
+    log: Optional[Union[Dict, List]] = None
+    threads: Optional[int] = None
+    resources: Optional[Dict] = None
+    priority: Optional[int] = None
+    shadow_depth: Optional[str] = None
+    benchmark: Optional[str] = None
+    conda_env: Optional[str] = None
+    container_img: Optional[str] = None
+    env_modules: Optional[List[str]] = None
+    group: Optional[str] = None
     notes: Optional[List[str]] = None
     path: str
     demos: Optional[List[DemoCall]] = None
     demo_count: Optional[int] = 0  # For summary view
+
+
+class DemoCaseResponse(BaseModel):
+    method: str
+    endpoint: str
+    payload: SnakemakeWrapperRequest
+    curl_example: str
 
 
 class ListWrappersResponse(BaseModel):
@@ -309,6 +326,40 @@ def create_native_fastapi_app(wrappers_path: str, workflows_dir: str) -> FastAPI
         except Exception as e:
             logger.error(f"Error loading cached metadata for {tool_path}: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error loading cached metadata: {str(e)}")
+
+    @app.get("/demo-case", response_model=DemoCaseResponse, operation_id="get_samtools_faidx_demo_case")
+    async def get_samtools_faidx_demo_case():
+        """
+        Provides a demo case for running the 'bio/samtools/faidx' wrapper via the /tool-processes endpoint,
+        including the request payload and a curl example.
+        """
+        # Define placeholder paths for inputs/outputs/workdir
+        # In a real scenario, these would be actual file paths accessible by the server
+        placeholder_input_file = "/path/to/your/genome.fasta"
+        placeholder_output_file = "/path/to/your/genome.fasta.fai"
+        placeholder_workdir = "/path/to/your/working_directory"
+        
+        # Construct the SnakemakeWrapperRequest payload
+        payload = SnakemakeWrapperRequest(
+            wrapper_name="bio/samtools/faidx",
+            inputs=[placeholder_input_file],
+            outputs=[placeholder_output_file],
+            workdir=placeholder_workdir,
+            conda_env=str(Path(wrappers_path) / "bio/samtools/faidx/environment.yaml")
+        )
+        
+        # Generate a curl example
+        payload_json = payload.model_dump_json(indent=2)
+        curl_example = f"""curl -X POST "http://localhost:8082/tool-processes" \\
+     -H "Content-Type: application/json" \\
+     -d '{payload_json}'"""
+        
+        return DemoCaseResponse(
+            method="POST",
+            endpoint="/tool-processes",
+            payload=payload,
+            curl_example=curl_example
+        )
 
     return app
 
