@@ -1,5 +1,6 @@
 #!/bin/bash
 set -x # Enable shell debugging
+unset http_proxy https_proxy # Bypass proxy for localhost connections
 
 # This script executes the samtools/faidx wrapper via the /tool-processes REST API endpoint
 # using a curl command, polls its status, and verifies successful execution.
