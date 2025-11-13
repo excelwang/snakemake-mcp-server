@@ -28,6 +28,11 @@ def workflows_dir(snakebase_dir):
     return os.path.join(snakebase_dir, "snakemake-workflows")
 
 @pytest.fixture(scope="function")
+def run_wrapper_test():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield temp_dir
+
+@pytest.fixture(scope="function")
 def test_files():
     """创建测试文件"""
     temp_dir = tempfile.mkdtemp(prefix="direct_func_test_")

@@ -13,21 +13,20 @@ logger = logging.getLogger(__name__)
 async def run_wrapper(
     # Align with Snakemake Rule properties
     wrapper_name: str,
-    wrappers_path: str,
+    workdir: str,
     inputs: Optional[Union[Dict, List]] = None,
     outputs: Optional[Union[Dict, List]] = None,
     params: Optional[Dict] = None,
     log: Optional[Union[Dict, List]] = None,
-    threads: int = 1,
+    threads: Optional[int] = None,
     resources: Optional[Dict] = None,
-    priority: int = 0,
+    priority: Optional[int] = None,
     shadow_depth: Optional[str] = None,
     benchmark: Optional[str] = None,
     container_img: Optional[str] = None,
     env_modules: Optional[List[str]] = None,
     group: Optional[str] = None,
     # Execution control
-    workdir: Optional[str] = None,
     timeout: int = 600,
 ) -> Dict:
     """
@@ -35,6 +34,12 @@ async def run_wrapper(
     Snakemake via the command line in a non-blocking, asynchronous manner.
     """
     snakefile_path = None  # Initialize to ensure it's available in finally block
+
+    # Infer wrappers_path from environment variable
+    snakebase_dir = os.environ.get("SNAKEBASE_DIR")
+    if not snakebase_dir:
+        return {"status": "failed", "stdout": "", "stderr": "SNAKEBASE_DIR environment variable not set.", "exit_code": -1, "error_message": "SNAKEBASE_DIR not set."}
+    wrappers_path = os.path.join(snakebase_dir, "snakemake-wrappers")
 
     # Defensively resolve wrappers_path to an absolute path.
     abs_wrappers_path = Path(wrappers_path).resolve()
@@ -48,6 +53,7 @@ async def run_wrapper(
             return {"status": "failed", "stdout": "", "stderr": "A 'wrapper_name' must be provided for execution.", "exit_code": -1, "error_message": "wrapper_name must be a non-empty string."}
 
         execution_workdir = Path(workdir).resolve()
+
 
         # --- Conda Environment Discovery and Copying ---
         resolved_conda_env_path_for_snakefile = None
@@ -121,7 +127,7 @@ async def run_wrapper(
         cmd_list = [
             "snakemake",
             "--snakefile", str(snakefile_path),
-            "--cores", str(threads),
+            "--cores", str(threads) if threads is not None else "1",
             "--nocolor",
             "--forceall",  # Force execution since we are in a temp/isolated context
             "--wrapper-prefix", str(abs_wrappers_path) + os.sep # Add wrapper prefix with trailing slash
@@ -187,9 +193,9 @@ def _generate_wrapper_snakefile(
     outputs: Optional[Union[Dict, List]] = None,
     params: Optional[Dict] = None,
     log: Optional[Union[Dict, List]] = None,
-    threads: int = 1,
+    threads: Optional[int] = None,
     resources: Optional[Dict] = None,
-    priority: int = 0,
+    priority: Optional[int] = None,
     shadow_depth: Optional[str] = None,
     benchmark: Optional[str] = None,
     conda_env_path_for_snakefile: Optional[str] = None,
@@ -249,7 +255,8 @@ def _generate_wrapper_snakefile(
             rule_parts.append(f"    log: {', '.join(log_strs)}")
     
     # Threads
-    rule_parts.append(f"    threads: {threads}")
+    if threads is not None:
+        rule_parts.append(f"    threads: {threads}")
     
     # Resources
     if resources:
@@ -269,7 +276,7 @@ def _generate_wrapper_snakefile(
             rule_parts.append(f"    resources: {', '.join(processed_resources)}")
     
     # Priority
-    if priority != 0:
+    if priority is not None:
         rule_parts.append(f"    priority: {priority}")
     
     # Shadow
