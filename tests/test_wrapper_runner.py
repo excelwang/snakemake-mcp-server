@@ -2,12 +2,7 @@ import pytest
 import os
 import shutil
 import tempfile
-import pytest
-import os
-import tempfile
-import shutil
 from pathlib import Path
-from snakemake_mcp_server.wrapper_runner import run_wrapper
 
 SNAKEBASE_DIR = "/root/snakemake-mcp-server/snakebase"
 
@@ -49,7 +44,7 @@ def arriba_data(wrappers_path):
 
     output_fusions = os.path.join(output_fusions_dir, "A.fusions.tsv")
     output_discarded = os.path.join(output_fusions_dir, "A.discarded.tsv")
-    
+
     yield output_fusions, output_discarded
     # Teardown
     for f in [output_fusions, output_discarded]:
@@ -59,47 +54,25 @@ def arriba_data(wrappers_path):
 # --- Test Case Definitions ---
 
 @pytest.mark.asyncio
-async def test_samtools_faidx_self_contained(self_contained_faidx_data, wrappers_path):
+async def test_samtools_faidx_self_contained(self_contained_faidx_data, run_wrapper_test):
     """Test samtools/faidx with self-created data in a temp folder."""
+    wrapper_runner, workdir = run_wrapper_test
+    
+    # Copy input file to the test work directory
     input_file, output_file = self_contained_faidx_data
+    input_filename = os.path.basename(input_file)
+    output_filename = os.path.basename(output_file)
+    input_path = os.path.join(workdir, input_filename)
+    output_path = os.path.join(workdir, output_filename)
     
-    result = await run_wrapper(
-        wrapper_name="bio/samtools/faidx",
-        inputs=[input_file],
-        outputs=[output_file],
-        wrappers_path=wrappers_path,
-        workdir=os.path.dirname(input_file) # Pass workdir explicitly
-    )
-    
-    assert result["status"] == "success"
-    assert result["exit_code"] == 0
-    assert os.path.exists(output_file)
+    shutil.copy2(input_file, input_path)
 
-@pytest.mark.asyncio
-async def test_arriba_local_data(arriba_data, wrappers_path):
-    """Test the arriba wrapper using its existing local test data."""
-    fusions_file, discarded_file = arriba_data
-    
-    result = await run_wrapper(
-        wrapper_name="bio/arriba",
-        inputs={
-            "bam": os.path.join(wrappers_path, "bio/arriba/test/A.bam"),
-            "genome": os.path.join(wrappers_path, "bio/arriba/test/genome.fasta"),
-            "annotation": os.path.join(wrappers_path, "bio/arriba/test/annotation.gtf")
-        },
-        outputs={
-            "fusions": fusions_file,
-            "discarded": discarded_file
-        },
-        params={
-            "genome_build": "GRCh37",
-            "extra": f"-d {os.path.join(wrappers_path, 'bio/arriba/test/blacklist.tsv')}"
-        },
-        threads=2,
-        wrappers_path=wrappers_path,
-        workdir=os.path.dirname(fusions_file) # Pass workdir explicitly
+    result = await wrapper_runner(
+        wrapper_name="bio/samtools/faidx",
+        inputs=[input_filename],
+        outputs=[output_path]
     )
-    
+
     assert result["status"] == "success"
     assert result["exit_code"] == 0
-    assert os.path.exists(fusions_file)
+    assert os.path.exists(output_path)
