@@ -27,10 +27,23 @@ def wrappers_path(snakebase_dir):
 def workflows_dir(snakebase_dir):
     return os.path.join(snakebase_dir, "snakemake-workflows")
 
-@pytest.fixture(scope="function")
-def run_wrapper_test():
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield temp_dir
+@pytest_asyncio.fixture(scope="function")
+async def run_wrapper_test():
+    """创建一个封装了run_wrapper调用的fixture，接口与/tool-processes相同"""
+    from snakemake_mcp_server.wrapper_runner import run_wrapper
+    
+    with tempfile.TemporaryDirectory() as workdir:
+        async def wrapper_runner_async(wrapper_name, inputs=None, outputs=None, params=None):
+            return await run_wrapper(
+                wrapper_name=wrapper_name,
+                workdir=workdir,
+                inputs=inputs,
+                outputs=outputs,
+                params=params
+            )
+        
+        # 返回包装器运行器异步函数和工作目录
+        yield wrapper_runner_async, workdir
 
 @pytest.fixture(scope="function")
 def test_files():

@@ -2,29 +2,27 @@ import pytest
 import os
 import tempfile
 import gzip
-from snakemake_mcp_server.wrapper_runner import run_wrapper
 
 @pytest.mark.asyncio
 async def test_megahit_wrapper(run_wrapper_test):
     """Test the megahit wrapper."""
-    temp_dir = run_wrapper_test
+    wrapper_runner, workdir = run_wrapper_test
 
     # Create dummy input files
-    r1_path = os.path.join(temp_dir, "sample1_R1.fastq.gz")
-    r2_path = os.path.join(temp_dir, "sample1_R2.fastq.gz")
-    
+    r1_path = os.path.join(workdir, "sample1_R1.fastq.gz")
+    r2_path = os.path.join(workdir, "sample1_R2.fastq.gz")
+
     with gzip.open(r1_path, "wt") as f:
         f.write("@read1\nAGCT\n+\nIIII\n")
     with gzip.open(r2_path, "wt") as f:
         f.write("@read1\nAGCT\n+\nIIII\n")
 
-    output_dir = os.path.join(temp_dir, "assembly")
-    os.makedirs(output_dir)
+    output_dir = os.path.join(workdir, "assembly")
+    os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join("assembly", "final.contigs.fasta")
 
-    result = await run_wrapper(
+    result = await wrapper_runner(
         wrapper_name="bio/megahit",
-        workdir=temp_dir,
         inputs={
             "reads": ["sample1_R1.fastq.gz", "sample1_R2.fastq.gz"]
         },
@@ -34,4 +32,4 @@ async def test_megahit_wrapper(run_wrapper_test):
 
     assert result["status"] == "success"
     assert result["exit_code"] == 0
-    assert os.path.exists(os.path.join(temp_dir, output_file))
+    assert os.path.exists(os.path.join(workdir, output_file))
