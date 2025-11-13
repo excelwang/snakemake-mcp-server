@@ -45,7 +45,7 @@ class SnakemakeWrapperRequest(BaseModel):
     wrapper_name: str
     inputs: Optional[Union[Dict, List]] = None
     outputs: Optional[Union[Dict, List]] = None
-    params: Optional[Dict] = None
+    params: Optional[List] = None
     log: Optional[Union[Dict, List]] = None
     threads: int = 1
     resources: Optional[Dict] = None
@@ -62,7 +62,7 @@ class UserSnakemakeWrapperRequest(BaseModel):
     wrapper_name: str
     inputs: Optional[Union[Dict, List]] = None
     outputs: Optional[Union[Dict, List]] = None
-    params: Optional[Dict] = None
+    params: Optional[List] = None
 
 
 class SnakemakeWorkflowRequest(BaseModel):
@@ -141,7 +141,7 @@ async def run_snakemake_job_in_background(job_id: str, request: SnakemakeWrapper
     try:
         result = await run_wrapper(
             wrapper_name=request.wrapper_name,
-            wrappers_path=wrappers_path,
+            workdir=request.workdir,
             inputs=request.inputs,
             outputs=request.outputs,
             params=request.params,
@@ -154,7 +154,6 @@ async def run_snakemake_job_in_background(job_id: str, request: SnakemakeWrapper
             container_img=request.container_img,
             env_modules=request.env_modules,
             group=request.group,
-            workdir=request.workdir,
         )
         
         # Prepare output file paths
