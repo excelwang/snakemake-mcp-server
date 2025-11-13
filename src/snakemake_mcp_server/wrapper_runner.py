@@ -212,7 +212,14 @@ def _generate_wrapper_snakefile(
     # Inputs
     if inputs:
         if isinstance(inputs, dict):
-            input_strs = [f'{k}="{v}"' for k, v in inputs.items()]
+            input_strs = []
+            for k, v in inputs.items():
+                if isinstance(v, list):
+                    # Format list as a string representation of a list
+                    list_str = "[" + ", ".join([f'"{item}"' for item in v]) + "]"
+                    input_strs.append(f'{k}={list_str}')
+                else:
+                    input_strs.append(f'{k}="{v}"')
             rule_parts.append(f"    input: {', '.join(input_strs)}")
         elif isinstance(inputs, list):
             input_strs = [f'"{inp}"' for inp in inputs]

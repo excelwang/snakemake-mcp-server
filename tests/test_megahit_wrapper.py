@@ -19,24 +19,24 @@ async def test_megahit_wrapper(wrappers_path):
 
         output_dir = os.path.join(temp_dir, "assembly")
         os.makedirs(output_dir)
-        output_file = os.path.join(output_dir, "final.contigs.fasta")
-        benchmark_file = os.path.join(temp_dir, "benchmark.txt")
+        output_file = os.path.join("assembly", "final.contigs.fasta")
+        benchmark_file = "benchmark.txt"
 
         result = await run_wrapper(
-            wrapper_name="megahit",
+            wrapper_name="bio/megahit",
             wrappers_path=wrappers_path,
             inputs={
-                "reads": [r1_path, r2_path]
+                "reads": ["sample1_R1.fastq.gz", "sample1_R2.fastq.gz"]
             },
             outputs={"contigs": output_file},
             params={"extra": "--min-count 10 --k-list 21,29,39,59,79,99,119,141"},
             container_img="docker://continuumio/miniconda3:4.4.10",
-            benchmark=benchmark_file,
+            benchmark=os.path.join(temp_dir, benchmark_file),
             resources={"mem_mb": 250000},
             workdir=temp_dir,
         )
 
         assert result["status"] == "success"
         assert result["exit_code"] == 0
-        assert os.path.exists(output_file)
-        assert os.path.exists(benchmark_file)
+        assert os.path.exists(os.path.join(temp_dir, output_file))
+        assert os.path.exists(os.path.join(temp_dir, benchmark_file))
