@@ -43,10 +43,29 @@ echo "--- Step 2: Executing the curl example from /demo-case to submit the job -
 # Extract the payload directly from the DEMO_CASE_RESPONSE
 DEMO_CASE_PAYLOAD=$(echo "$DEMO_CASE_RESPONSE" | jq -c '.payload')
 
-# Construct the curl command using the API_SERVER_URL and the extracted payload
+# Get the wrapper name from the payload
+WRAPPER_NAME=$(echo "$DEMO_CASE_PAYLOAD" | jq -r '.wrapper_name')
+
+# Construct absolute paths for inputs
+SNAKEBASE_DIR=${SNAKEBASE_DIR:-$HOME/snakebase}
+DEMO_WORKDIR="$SNAKEBASE_DIR/snakemake-wrappers/$WRAPPER_NAME/test"
+
+# Update the inputs in the payload to be absolute paths
+# This handles both list and dictionary inputs
+UPDATED_PAYLOAD=$(echo "$DEMO_CASE_PAYLOAD" | jq --arg demo_workdir "$DEMO_WORKDIR" '
+    if .inputs | type == "array" then
+        .inputs |= map($demo_workdir + "/" + .)
+    elif .inputs | type == "object" then
+        .inputs |= with_entries(.value = $demo_workdir + "/" + .value)
+    else
+        .
+    end
+')
+
+# Construct the curl command using the API_SERVER_URL and the updated payload
 CURL_COMMAND="curl -X POST \"$API_SERVER_URL$DEMO_CASE_ENDPOINT\" \
      -H \"Content-Type: application/json\" \
-     -d '$DEMO_CASE_PAYLOAD'"
+     -d '$UPDATED_PAYLOAD'"
 
 read -r CURL_OUTPUT < <(eval "$CURL_COMMAND")
 

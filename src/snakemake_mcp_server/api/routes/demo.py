@@ -12,8 +12,8 @@ async def get_samtools_faidx_demo_case(request: Request):
     The /tool-processes endpoint will be responsible for creating any necessary dummy input files.
     """
     # Define input and output file names relative to the workdir
-    input_file_name = "genome.fasta"
-    output_file_name = "genome.fasta.fai"
+    input_file_name = "genome.fa"
+    output_file_name = "genome.fa.fai"
 
     # Construct the UserSnakemakeWrapperRequest payload
     user_payload = UserSnakemakeWrapperRequest(
