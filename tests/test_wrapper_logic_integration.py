@@ -103,12 +103,19 @@ async def test_all_cached_demos_with_run_wrapper_test():
     failed_demos = 0
     skipped_demos = 0
 
+    # Loop through wrappers and demos until we find a successful one or exhaust all options
     for wrapper in wrappers:
+        if successful_demos > 0:  # If we already have a successful demo, we can stop
+            break
+            
         if not wrapper.demos:
             continue
 
         logging.info(f"Testing demos for wrapper: {wrapper.path}")
         for i, demo in enumerate(wrapper.demos):
+            if successful_demos > 0:  # If we already have a successful demo, we can stop
+                break
+
             payload = demo.payload
             logging.info(f"  - Processing Demo {i+1}...")
 
@@ -126,12 +133,26 @@ async def test_all_cached_demos_with_run_wrapper_test():
                 logging.warning(f"    Demo {i+1}: SKIPPED because wrapper name is empty.")
                 skipped_demos += 1
                 continue
-                
 
 
             # Create a unique temporary workdir for this demo
             with tempfile.TemporaryDirectory() as workdir:
                 try:
+                    # Copy input files from the wrapper's test directory to the workdir
+                    # The workdir is specified in the payload
+                    demo_workdir = payload.get('workdir')
+                    if demo_workdir:
+                        import shutil
+                        # Find all files in the demo workdir and copy them to the temporary workdir
+                        if os.path.exists(demo_workdir):
+                            for item in os.listdir(demo_workdir):
+                                source = os.path.join(demo_workdir, item)
+                                destination = os.path.join(workdir, item)
+                                if os.path.isfile(source):
+                                    shutil.copy2(source, destination)
+                                elif os.path.isdir(source):
+                                    shutil.copytree(source, destination)
+                    
                     # Execute the wrapper with the specific workdir
                     logging.info(f"    Demo {i+1}: Executing in workdir {workdir}...")
                     from snakemake_mcp_server.wrapper_runner import run_wrapper
@@ -146,6 +167,8 @@ async def test_all_cached_demos_with_run_wrapper_test():
                     if result.get("status") == "success":
                         logging.info(f"    Demo {i+1}: SUCCESS")
                         successful_demos += 1
+                        # Exit after first successful demo
+                        break
                     else:
                         logging.error(f"    Demo {i+1}: FAILED")
                         logging.error(f"      Exit Code: {result.get('exit_code')}")
@@ -156,6 +179,10 @@ async def test_all_cached_demos_with_run_wrapper_test():
                     logging.error(f"    Demo {i+1}: EXCEPTION during execution: {e}", exc_info=True)
                     failed_demos += 1
 
+            # If we have a successful demo now, don't try more
+            if successful_demos > 0:
+                break
+
     logging.info("="*60)
     logging.info("Cached Demo Test Summary")
     logging.info(f"Successful demos: {successful_demos}")
@@ -163,6 +190,8 @@ async def test_all_cached_demos_with_run_wrapper_test():
     logging.info(f"Skipped demos: {skipped_demos}")
     logging.info("="*60)
 
-    # Note: We don't assert failure count is 0 since some demos may fail
-    # due to missing dependencies or other environmental issues
+    # If no demos were successful, the test should fail
+    if successful_demos == 0:
+        pytest.fail(f"Test failed because no demo executed successfully after trying {failed_demos} demos.")
+    
     logging.info(f"Test completed with {failed_demos} failed demos out of {successful_demos + failed_demos + skipped_demos} total demos.")

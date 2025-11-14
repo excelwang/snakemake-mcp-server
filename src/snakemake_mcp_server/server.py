@@ -279,6 +279,161 @@ def mcp(ctx, host, port, log_level):
         sys.exit(1)
 
 
+@cli.command(
+    help="Verify all cached wrapper demos by executing them with appropriate test data."
+)
+@click.option("--log-level", default="INFO", type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR']),
+              help="Logging level. Default: INFO")
+@click.option("--dry-run", is_flag=True, help="Show what would be executed without running it.")
+@click.pass_context
+def verify(ctx, log_level, dry_run):
+    """Verify all cached wrapper demos by executing them with appropriate test data."""
+    import asyncio
+    import json
+    import tempfile
+    import shutil
+    from pathlib import Path
+    from .fastapi_app import WrapperMetadata
+    from .wrapper_runner import run_wrapper
+
+    # Reconfigure logging to respect the user's choice
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        force=True  # This is crucial to override the initial config
+    )
+
+    wrappers_path = ctx.obj['WRAPPERS_PATH']
+    logger.setLevel(log_level)
+
+    logger.info(f"Starting verification of cached wrapper demos...")
+    logger.info(f"Using wrappers from: {wrappers_path}")
+
+    cache_dir = Path(wrappers_path) / ".parser"
+    if not cache_dir.exists():
+        logger.error(f"Parser cache directory not found at: {cache_dir}. Run 'swa parse' first.")
+        sys.exit(1)
+
+    # Load all cached wrapper metadata
+    wrappers = []
+    for root, _, files in os.walk(cache_dir):
+        for file in files:
+            if file.endswith(".json"):
+                try:
+                    with open(os.path.join(root, file), 'r') as f:
+                        data = json.load(f)
+                        wrappers.append(WrapperMetadata(**data))
+                except Exception as e:
+                    logger.error(f"Failed to load cached wrapper from {file}: {e}")
+                    continue
+
+    logger.info(f"Found {len(wrappers)} cached wrappers with metadata.")
+
+    # Count total demos
+    total_demos = 0
+    for wrapper in wrappers:
+        if wrapper.demos:
+            total_demos += len(wrapper.demos)
+
+    if total_demos == 0:
+        logger.warning("No demos found in cached wrapper metadata.")
+        return
+
+    logger.info(f"Found {total_demos} demos to verify.")
+
+    if dry_run:
+        logger.info("DRY RUN MODE: Would execute all demos but not actually run them.")
+        for wrapper in wrappers:
+            if wrapper.demos:
+                for demo in wrapper.demos:
+                    payload = demo.payload
+                    wrapper_name = payload.get('wrapper', '').replace('file://', '')
+                    if wrapper_name.startswith("master/"):
+                        wrapper_name = wrapper_name[len("master/"):]
+                    logger.info(f"  Would execute demo for wrapper: {wrapper_name}")
+        return
+
+    # Execute all demos
+    successful_demos = 0
+    failed_demos = 0
+
+    for wrapper in wrappers:
+        if not wrapper.demos:
+            continue
+
+        logger.info(f"Verifying demos for wrapper: {wrapper.path}")
+        for i, demo in enumerate(wrapper.demos):
+            payload = demo.payload
+            logger.info(f"  - Processing Demo {i+1}...")
+
+            # Only use the 4 required parameters for the API
+            wrapper_name = payload.get('wrapper', '').replace('file://', '')
+            if wrapper_name.startswith("master/"):
+                wrapper_name = wrapper_name[len("master/"):]
+
+            inputs = payload.get('input', {})
+            outputs = payload.get('output', {})
+            params = payload.get('params', {})
+
+            # Skip if wrapper name is empty
+            if not wrapper_name:
+                logger.warning(f"    Demo {i+1}: SKIPPED because wrapper name is empty.")
+                continue
+
+            # Create a unique temporary workdir for this demo
+            with tempfile.TemporaryDirectory() as workdir:
+                try:
+                    # Copy input files from the wrapper's test directory to the workdir
+                    # The workdir is specified in the payload
+                    demo_workdir = payload.get('workdir')
+                    if demo_workdir and os.path.exists(demo_workdir):
+                        # Find all files in the demo workdir and copy them to the temporary workdir
+                        for item in os.listdir(demo_workdir):
+                            source = os.path.join(demo_workdir, item)
+                            destination = os.path.join(workdir, item)
+                            if os.path.isfile(source):
+                                shutil.copy2(source, destination)
+                            elif os.path.isdir(source):
+                                shutil.copytree(source, destination)
+
+                    # Execute the wrapper with the specific workdir
+                    logger.info(f"    Demo {i+1}: Executing in workdir {workdir}...")
+                    result = asyncio.run(run_wrapper(
+                        wrapper_name=wrapper_name,
+                        workdir=workdir,
+                        inputs=inputs,
+                        outputs=outputs,
+                        params=params
+                    ))
+
+                    if result.get("status") == "success":
+                        logger.info(f"    Demo {i+1}: SUCCESS")
+                        successful_demos += 1
+                    else:
+                        logger.error(f"    Demo {i+1}: FAILED")
+                        logger.error(f"      Exit Code: {result.get('exit_code')}")
+                        logger.error(f"      Stderr: {result.get('stderr') or 'No stderr output'}")
+                        failed_demos += 1
+
+                except Exception as e:
+                    logger.error(f"    Demo {i+1}: EXCEPTION during execution: {e}", exc_info=True)
+                    failed_demos += 1
+
+    logger.info("="*60)
+    logger.info("Verification Summary")
+    logger.info(f"Successful demos: {successful_demos}")
+    logger.info(f"Failed demos: {failed_demos}")
+    logger.info(f"Total demos: {successful_demos + failed_demos}")
+    logger.info("="*60)
+
+    logger.info(f"Verification completed with {failed_demos} failed demos out of {successful_demos + failed_demos} total demos.")
+    if failed_demos > 0:
+        logger.error(f"Verification failed with {failed_demos} demo(s) not executing successfully.")
+        sys.exit(1)
+    else:
+        logger.info("All demos executed successfully!")
+
+
 def main():
     cli()
 
