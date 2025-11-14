@@ -163,7 +163,6 @@ def parse(ctx):
                 click.echo(f"  [ERROR] Failed to parse or cache {wrapper_rel_path}: {e}", err=True)
                 import traceback
                 traceback.print_exc() # Print full traceback for debugging
-        if wrapper_count == 2: break
 
     click.echo(f"\nSuccessfully parsed and cached {wrapper_count} wrappers and {total_demo_count} demos in {cache_dir}")
 
