@@ -1,0 +1,42 @@
+from fastapi import APIRouter, Request
+from ...schemas import DemoCaseResponse, UserSnakemakeWrapperRequest
+
+router = APIRouter()
+
+@router.get("/demo-case", response_model=DemoCaseResponse, operation_id="get_samtools_faidx_demo_case")
+async def get_samtools_faidx_demo_case(request: Request):
+    """
+    Provides a demo case for running the 'bio/samtools/faidx' wrapper via the /tool-processes endpoint,
+    including the request payload and a curl example.
+    
+    The /tool-processes endpoint will be responsible for creating any necessary dummy input files.
+    """
+    # Define input and output file names relative to the workdir
+    input_file_name = "genome.fasta"
+    output_file_name = "genome.fasta.fai"
+
+    # Construct the UserSnakemakeWrapperRequest payload
+    user_payload = UserSnakemakeWrapperRequest(
+        wrapper_name="bio/samtools/faidx",
+        inputs=[input_file_name], # Relative to workdir
+        outputs=[output_file_name], # Relative to workdir
+    )
+
+    # Construct the DemoCaseResponse
+    demo_case = DemoCaseResponse(
+        method="POST",
+        endpoint="/tool-processes",
+        payload=user_payload.model_dump(mode="json"), # Pass the Pydantic model's dict representation here
+        curl_example="" # Will be filled below
+    )
+
+    # Generate curl example using the user_payload and dynamic base URL
+    payload_json = user_payload.model_dump_json(indent=2)
+    base_url_str = str(request.base_url).rstrip('/') # Ensure no trailing slash
+    curl_example = f"""curl -X POST \"{base_url_str}/tool-processes\" \
+     -H \"Content-Type: application/json\" \
+     -d '{payload_json}'"""
+    
+    demo_case.curl_example = curl_example
+    
+    return demo_case

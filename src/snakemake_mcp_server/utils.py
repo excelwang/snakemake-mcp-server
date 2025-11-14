@@ -6,7 +6,7 @@ import shutil
 import os
 from pathlib import Path
 from typing import Any, Optional
-from .fastapi_app import SnakemakeResponse
+from .schemas import SnakemakeResponse
 
 logger = logging.getLogger(__name__)
 
